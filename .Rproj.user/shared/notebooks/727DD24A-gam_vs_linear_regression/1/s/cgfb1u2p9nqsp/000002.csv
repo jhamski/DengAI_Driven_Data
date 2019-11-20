@@ -1,0 +1,8 @@
+"0","lm_predictions <- predict.lm(lm_all_features, newdata = features_test %>% mutate_at(.vars = c(""city""), .funs = as.factor))"
+"2","prediction from a rank-deficient fit may be misleading"
+"0","lm_predictions_submission <-features_test %>% "
+"0","  select(city, year, weekofyear) %>% "
+"0","  cbind(lm_predictions) %>% "
+"0","  rename(""total_cases"" = lm_predictions) %>% "
+"0","  mutate(total_cases = as.numeric(total_cases) %>% round(0),"
+"0","         total_cases = replace_na(total_cases, 0)) "
