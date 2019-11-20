@@ -1,0 +1,1 @@
+"0","plot(gam_mod, residuals = TRUE, pch = 1)"

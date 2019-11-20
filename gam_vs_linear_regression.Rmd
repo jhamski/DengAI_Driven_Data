@@ -47,3 +47,50 @@ colnames(lm_predictions_submission) == colnames(submission_format)
 write_csv(lm_predictions_submission, "output/lm_predictions_submission.csv")
 ```
 
+# GLM 
+
+```{r}
+gam_mod <- gam(total_cases ~ s(precipitation_amt_mm) + 
+                 s(station_max_temp_c) +
+                 s(ndvi_ne) +
+                 s(ndvi_se) +
+                 s(reanalysis_relative_humidity_percent), data = training_data)
+summary(gam_mod)
+```
+
+```{r}
+plot(gam_mod, residuals = TRUE, pch = 1)
+```
+
+```{r}
+gam_predictions <- predict.gam(gam_mod, 
+                               newdata = features_test %>% 
+                                 mutate_at(.vars = c("city"), .funs = as.factor))
+
+gam_predictions_submission <-features_test %>% 
+  select(city, year, weekofyear) %>% 
+  cbind(gam_predictions) %>% 
+  rename("total_cases" = gam_predictions) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+```
+
+```{r}
+colnames(gam_predictions_submission) == colnames(submission_format)
+
+write_csv(gam_predictions_submission, "output/gam_predictions_submission.csv")
+```
+
+
+```{r}
+output_comparison <- lm_predictions_submission %>% 
+  mutate(type = "poisson") %>% 
+  rbind(gam_predictions_submission %>% 
+          mutate(type = "gam")) %>% 
+  rbind(features_train_labels %>% 
+          mutate(type = "training"))
+
+ggplot(output_comparison) + 
+  geom_density(aes(x = total_cases, fill = type), alpha = 0.8)
+```
+
