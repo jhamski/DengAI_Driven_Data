@@ -1,0 +1,126 @@
+---
+title: "Modeling Dengue Fever Cases with GAMs"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+theme_set(theme_minimal())
+library(mgcv)
+```
+
+# Data Import and Exploratory Data Analysis  
+```{r}
+features_train <- read_csv("data/dengue_features_train.csv")
+features_train_labels <- read_csv("data/dengue_labels_train.csv") %>% rename("city" = fcity)
+submission_format <- read_csv("data/submission_format.csv")
+features_test <- read_csv("data/dengue_features_test.csv")
+```
+
+```{r}
+training_data <- left_join(features_train_labels, features_train, by = c("city", "year", "weekofyear")) %>% 
+  mutate_at(.vars = c("city"), .funs = as.factor)
+```
+
+## Response Variable Characterization  
+```{r}
+ggplot(training_data) +
+  geom_density(aes(x = total_cases), fill = "lightgray")
+
+ggplot(training_data) +
+  geom_density(aes(x = total_cases, fill = city), alpha = 0.8)
+```
+```{r}
+table(training_data$city)
+```
+
+
+
+# Both Cities Together
+```{r}
+gam_mod <- gam(total_cases ~ s(precipitation_amt_mm) + 
+                 s(station_max_temp_c) +
+                 s(ndvi_ne) +
+                 s(ndvi_se) +
+                 s(reanalysis_relative_humidity_percent), data = training_data)
+summary(gam_mod)
+```
+
+```{r}
+plot(gam_mod, residuals = TRUE, pch = 1)
+```
+
+# Model Each City Separately
+
+```{r}
+gam_mod_sj <- gam(total_cases ~ s(precipitation_amt_mm, k = 3) + 
+                 s(station_max_temp_c, k = 3) +
+                 s(ndvi_ne, k = 3) +
+                 s(ndvi_se, k = 3) +
+                 s(reanalysis_relative_humidity_percent, k = 3) +
+                 s(reanalysis_tdtr_k, k = 3), 
+                 data = training_data %>% filter(city == "sj"))
+
+gam_predictions_sj <- predict.gam(gam_mod_sj, 
+                               newdata = features_test %>% 
+                                filter(city == "sj") %>%
+                                mutate_at(.vars = c("city"), .funs = as.factor))
+
+gam_mod_iq <- gam(total_cases ~ s(precipitation_amt_mm, k = 3) + 
+                 s(station_max_temp_c, k = 3) +
+                 s(ndvi_ne, k = 3) +
+                 s(ndvi_se, k = 3) +
+                 s(reanalysis_relative_humidity_percent, k = 3) +
+                 s(reanalysis_tdtr_k, k = 3), 
+                 data = training_data %>% filter(city == "iq"))
+
+gam_predictions_iq <- predict.gam(gam_mod_iq, 
+                               newdata = features_test %>% 
+                                filter(city == "iq") %>%
+                                mutate_at(.vars = c("city"), .funs = as.factor))
+```
+
+```{r}
+par(mfrow = c(1,2))
+plot(gam_mod_sj, residuals = TRUE, pch = 1)
+plot(gam_mod_iq, residuals = TRUE, pch = 1)
+```
+
+
+```{r}
+gam_predictions_submission_sj <-features_test %>%
+  filter(city == "sj") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(gam_predictions_sj) %>% 
+  rename("total_cases" = gam_predictions_sj) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+gam_predictions_submission_iq <-features_test %>%
+  filter(city == "iq") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(gam_predictions_iq) %>% 
+  rename("total_cases" = gam_predictions_iq) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+gam_predictions_submission <- rbind(gam_predictions_submission_sj, gam_predictions_submission_iq)
+```
+
+
+```{r}
+output_comparison <- gam_predictions_submission %>% 
+          mutate(type = "gam") %>% 
+  rbind(features_train_labels %>% 
+          mutate(type = "training"))
+
+ggplot(output_comparison) + 
+  geom_density(aes(x = total_cases, fill = type), alpha = 0.8) +
+  facet_grid(~city)
+```
+
+```{r}
+colnames(gam_predictions_submission) == colnames(submission_format)
+
+write_csv(gam_predictions_submission, "output/gam_predictions_submission.csv")
+```

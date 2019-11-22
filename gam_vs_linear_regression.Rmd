@@ -4,15 +4,17 @@ output: html_notebook
 ---
 
 ```{r}
+library(MASS)
 library(tidyverse)
 library(mgcv)
+
 ```
 
 
 
 ```{r}
 features_train <- read_csv("data/dengue_features_train.csv")
-features_train_labels <- read_csv("data/dengue_labels_train.csv")
+features_train_labels <- read_csv("data/dengue_labels_train.csv") %>% rename("city" = fcity)
 submission_format <- read_csv("data/submission_format.csv")
 features_test <- read_csv("data/dengue_features_test.csv")
 ```
@@ -92,5 +94,127 @@ output_comparison <- lm_predictions_submission %>%
 
 ggplot(output_comparison) + 
   geom_density(aes(x = total_cases, fill = type), alpha = 0.8)
+```
+
+```{r}
+gam_mod_sj <- gam(total_cases ~ s(precipitation_amt_mm) + 
+                 s(station_max_temp_c) +
+                 s(ndvi_ne) +
+                 s(ndvi_se) +
+                 s(reanalysis_relative_humidity_percent) +
+                 s(reanalysis_tdtr_k), 
+                 data = training_data %>% filter(city == "sj"))
+
+gam_predictions_sj <- predict.gam(gam_mod_sj, 
+                               newdata = features_test %>% 
+                                filter(city == "sj") %>%
+                                mutate_at(.vars = c("city"), .funs = as.factor))
+
+gam_mod_iq <- gam(total_cases ~ s(precipitation_amt_mm) + 
+                 s(station_max_temp_c) +
+                 s(ndvi_ne) +
+                 s(ndvi_se) +
+                 s(reanalysis_relative_humidity_percent) +
+                 s(reanalysis_tdtr_k), 
+                 data = training_data %>% filter(city == "iq"))
+
+gam_predictions_iq <- predict.gam(gam_mod_iq, 
+                               newdata = features_test %>% 
+                                filter(city == "iq") %>%
+                                mutate_at(.vars = c("city"), .funs = as.factor))
+
+gam_predictions_submission_sj <-features_test %>%
+  filter(city == "sj") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(gam_predictions_sj) %>% 
+  rename("total_cases" = gam_predictions_sj) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+gam_predictions_submission_iq <-features_test %>%
+  filter(city == "iq") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(gam_predictions_iq) %>% 
+  rename("total_cases" = gam_predictions_iq) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+gam_predictions_submission <- rbind(gam_predictions_submission_sj, gam_predictions_submission_iq)
+```
+
+```{r}
+output_comparison <- lm_predictions_submission %>% 
+  mutate(type = "poisson") %>% 
+  rbind(gam_predictions_submission %>% 
+          mutate(type = "gam")) %>% 
+  rbind(features_train_labels %>% 
+          mutate(type = "training"))
+
+ggplot(output_comparison %>% filter(type != "poisson")) + 
+  geom_density(aes(x = total_cases, fill = type), alpha = 0.8) +
+  facet_grid(~city)
+```
+
+```{r}
+colnames(gam_predictions_submission) == colnames(submission_format)
+
+write_csv(gam_predictions_submission, "output/gam_predictions_submission.csv")
+```
+
+
+
+
+```{r}
+nbr_all_features_sj <- glm.nb(total_cases ~ ., 
+                          data = training_data %>%
+                            filter(city == "sj") %>% 
+                            select(-city, -weekofyear, -year)
+                            )
+
+nbr_all_features_iq <- glm.nb(total_cases ~ ., 
+                          data = training_data %>%
+                            filter(city == "iq") %>% 
+                            select(-city, -weekofyear, -year)
+                            )
+
+
+lm_predictions_sj <- predict.lm(nbr_all_features_sj, newdata = features_test %>% filter(city == "sj"))
+lm_predictions_iq <- predict.lm(nbr_all_features_iq, newdata = features_test %>% filter(city == "iq"))
+
+
+lm_predictions_submission_sj <-features_test %>%
+  filter(city == "sj") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(lm_predictions_sj) %>% 
+  rename("total_cases" = lm_predictions_sj) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+lm_predictions_submission_iq <-features_test %>%
+  filter(city == "iq") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(lm_predictions_iq) %>% 
+  rename("total_cases" = lm_predictions_iq) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+nbr_predictions_submission <- rbind(lm_predictions_submission_sj, lm_predictions_submission_iq)
+```
+
+```{r}
+output_comparison <- nbr_predictions_submission %>% 
+  mutate(type = "nbr") %>% 
+  rbind(features_train_labels %>% 
+          mutate(type = "training"))
+
+ggplot(output_comparison) + 
+  geom_density(aes(x = total_cases, fill = type), alpha = 0.8) +
+  facet_grid(~city)
+```
+
+```{r}
+colnames(nbr_predictions_submission) == colnames(submission_format)
+
+write_csv(nbr_predictions_submission, "output/nbr_predictions_submission.csv")
 ```
 

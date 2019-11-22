@@ -1,2 +1,0 @@
-"0","training_data <- left_join(features_train_labels, features_train, by = c(""city"", ""year"", ""weekofyear"")) %>% "
-"0","  mutate_at(.vars = c(""city""), .funs = as.factor)"

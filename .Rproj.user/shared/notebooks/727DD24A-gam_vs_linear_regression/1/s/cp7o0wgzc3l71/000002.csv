@@ -1,38 +1,10 @@
-"0","features_train <- read_csv(""data/dengue_features_train.csv"")"
+"0","features_train_labels <- read_csv(""data/dengue_labels_train.csv"") %>% rename(""city"" = fcity)
+"
 "2","Parsed with column specification:
 cols(
-  .default = col_double(),
-  city = [31mcol_character()[39m,
-  week_start_date = [34mcol_date(format = """")[39m
-)
-"
-"2","See spec(...) for full column specifications.
-"
-"0","features_train_labels <- read_csv(""data/dengue_labels_train.csv"")"
-"2","Parsed with column specification:
-cols(
-  city = [31mcol_character()[39m,
+  fcity = [31mcol_character()[39m,
   year = [32mcol_double()[39m,
   weekofyear = [32mcol_double()[39m,
   total_cases = [32mcol_double()[39m
 )
-"
-"0","submission_format <- read_csv(""data/submission_format.csv"")"
-"2","Parsed with column specification:
-cols(
-  city = [31mcol_character()[39m,
-  year = [32mcol_double()[39m,
-  weekofyear = [32mcol_double()[39m,
-  total_cases = [32mcol_double()[39m
-)
-"
-"0","features_test <- read_csv(""data/dengue_features_test.csv"")"
-"2","Parsed with column specification:
-cols(
-  .default = col_double(),
-  city = [31mcol_character()[39m,
-  week_start_date = [34mcol_date(format = """")[39m
-)
-"
-"2","See spec(...) for full column specifications.
 "
