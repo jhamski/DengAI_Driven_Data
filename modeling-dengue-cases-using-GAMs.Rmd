@@ -7,6 +7,7 @@ output: html_notebook
 library(tidyverse)
 theme_set(theme_minimal())
 library(mgcv)
+library(lubridate)
 ```
 
 # Data Import and Exploratory Data Analysis  
@@ -14,7 +15,9 @@ library(mgcv)
 features_train <- read_csv("data/dengue_features_train.csv")
 features_train_labels <- read_csv("data/dengue_labels_train.csv") %>% rename("city" = fcity)
 submission_format <- read_csv("data/submission_format.csv")
-features_test <- read_csv("data/dengue_features_test.csv")
+features_test <- read_csv("data/dengue_features_test.csv") %>% 
+  fill(ndvi_ne:station_precip_mm ,.direction = c("updown"))
+
 ```
 
 ```{r}
@@ -107,6 +110,124 @@ gam_predictions_submission_iq <-features_test %>%
 gam_predictions_submission <- rbind(gam_predictions_submission_sj, gam_predictions_submission_iq)
 ```
 
+
+```{r}
+output_comparison <- gam_predictions_submission %>% 
+          mutate(type = "gam") %>% 
+  rbind(features_train_labels %>% 
+          mutate(type = "training"))
+
+ggplot(output_comparison) + 
+  geom_density(aes(x = total_cases, fill = type), alpha = 0.8) +
+  facet_grid(~city)
+```
+
+```{r}
+colnames(gam_predictions_submission) == colnames(submission_format)
+
+write_csv(gam_predictions_submission, "output/gam_predictions_submission.csv")
+```
+
+
+# Model Each City Separately and Add in Seasonality
+
+```{r}
+training_sj <- training_data %>% 
+  filter(city == "sj")
+
+sj_ts <- ts(training_sj$total_cases, 
+   freq=365.25/7, 
+   start=decimal_date(ymd(training_sj$week_start_date[1])))
+
+sj_decomp <- decompose(sj_ts, type = "additive")
+
+training_sj$seasonality <- sj_decomp$seasonal
+
+training_iq <- training_data %>% 
+  filter(city == "iq")
+
+iq_ts <- ts(training_iq$total_cases, 
+   freq=665.25/7, 
+   start=decimal_date(ymd(training_iq$week_start_date[1])))
+
+iq_decomp <- decompose(iq_ts, type = "additive")
+
+training_iq$seasonality <- iq_decomp$seasonal
+```
+
+
+```{r}
+gam_mod_sj <- gam(total_cases ~ s(precipitation_amt_mm, k = 6) +
+                    s(station_max_temp_c, k = 6) +
+                    s(reanalysis_avg_temp_k, k = 6) +
+                    s(ndvi_ne, k = 6) +
+                    s(ndvi_se, k = 6) +
+                    s(reanalysis_relative_humidity_percent, k = 6) +
+                    s(reanalysis_tdtr_k, k = 6) +
+                    s(station_precip_mm, k = 6) +
+                    s(seasonality, k = 6), 
+                    data = training_sj)
+
+gam_mod_iq <- gam(total_cases ~ s(precipitation_amt_mm, k = 6) + 
+                 s(station_max_temp_c, k = 6) +
+                  s(reanalysis_avg_temp_k, k = 6) +
+                 s(ndvi_ne, k = 6) +
+                 s(ndvi_se, k = 6) +
+                 s(reanalysis_relative_humidity_percent, k = 6) +
+                 s(reanalysis_tdtr_k, k = 6) +
+                 s(station_precip_mm, k = 6) +
+                 s(seasonality, k = 6), 
+                 data = training_iq)
+```
+
+```{r}
+sj_seasonality <- training_sj %>% 
+  select(weekofyear, seasonality) %>% 
+  distinct(weekofyear, .keep_all = T)
+
+test_sj <- features_test %>% 
+  filter(city == "sj") %>%
+  mutate_at(.vars = c("city"), .funs = as.factor) %>% 
+  left_join(sj_seasonality, by = "weekofyear")
+
+iq_seasonality <- training_iq %>% 
+  select(weekofyear, seasonality) %>% 
+  distinct(weekofyear, .keep_all = T)
+
+test_iq <- features_test %>% 
+  filter(city == "iq") %>%
+  mutate_at(.vars = c("city"), .funs = as.factor) %>% 
+  left_join(iq_seasonality, by = "weekofyear") 
+```
+
+
+```{r}
+gam_predictions_sj <- predict.gam(gam_mod_sj, 
+                               newdata = test_sj)
+
+gam_predictions_iq <- predict.gam(gam_mod_iq, 
+                               newdata = test_iq)
+```
+
+```{r}
+gam_predictions_submission_sj <-features_test %>%
+  filter(city == "sj") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(gam_predictions_sj) %>% 
+  rename("total_cases" = gam_predictions_sj) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+gam_predictions_submission_iq <-features_test %>%
+  filter(city == "iq") %>%
+  select(city, year, weekofyear) %>% 
+  cbind(gam_predictions_iq) %>% 
+  rename("total_cases" = gam_predictions_iq) %>% 
+  mutate(total_cases = as.numeric(total_cases) %>% round(0),
+         total_cases = replace_na(total_cases, 0)) 
+
+gam_predictions_submission <- rbind(gam_predictions_submission_sj, gam_predictions_submission_iq)
+```
 
 ```{r}
 output_comparison <- gam_predictions_submission %>% 
